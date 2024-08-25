@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +22,7 @@ var opts struct {
 	Info        bool   `          long:"info"    description:"get info from magnet"`
 	Port        string `short:"p" long:"port"    description:"set the port that torrents are streamed over"`
 	Magnet      string `short:"t" long:"torrent" description:"path to torrent, URL or magnet link"`
+	Socket      string `short:"s" long:"socket"  description:"path to mpv socket"`
 	DownloadDir string `short:"o" long:"output"  description:"set the parent output directory to download into"`
 }
 
@@ -45,6 +47,12 @@ func StreamTorrent(cl *Client, torfile string) error {
 	link := cl.ServeTorrent(t)
 	fmt.Println(link)
 
+	payload := fmt.Sprintf(`{ "command": ["loadfile", "%s"] }`, link)
+	err = ConnectMpv(opts.Socket, payload)
+	if err != nil {
+		return err
+	}
+
 	HandleExit()
 
 	// block
@@ -66,7 +74,7 @@ func HandleExit() {
 var retry int
 
 func getInfo() error {
-	time.Sleep(time.Millisecond * 500)
+	time.Sleep(time.Millisecond * 50)
 	if retry >= 3 {
 		return fmt.Errorf("unable to reach server")
 	}
@@ -85,8 +93,26 @@ func getInfo() error {
 	return nil
 }
 
+func GetFreePort() (int, error) {
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	if err != nil {
+		return 0, err
+	}
+
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
 func init() {
-	opts.Port = "8888"
+	p, err := GetFreePort()
+	if err != nil {
+		p = 8080
+	}
+	opts.Port = fmt.Sprintf("%d", p)
 }
 
 func main() {
